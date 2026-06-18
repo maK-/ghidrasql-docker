@@ -1,0 +1,71 @@
+services:
+  ghidrasql-libghidra:
+    image: ghidrasql-ai:latest
+    container_name: ghidrasql-libghidra
+    environment:
+      MODE: headless
+    ports:
+      - "127.0.0.1:18080:18080"
+    volumes:
+      - ./projects:/projects
+    command:
+      - /projects
+      - ${GHIDRA_PROJECT_NAME:-hello_demo}
+      - -process
+      - ${GHIDRA_PROGRAM_NAME:-hello}
+      - -scriptPath
+      - /opt/ghidrasql/scripts
+      - -postScript
+      - LibGhidraHeadlessServer.java
+      - bind=0.0.0.0
+      - port=18080
+      - shutdown=none
+      - max_runtime_ms=0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:18080/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  ghidrasql-server:
+    image: ghidrasql-ai:latest
+    container_name: ghidrasql-server
+    depends_on:
+      ghidrasql-libghidra:
+        condition: service_healthy
+    environment:
+      MODE: ghidrasql
+    ports:
+      - "127.0.0.1:8081:8081"
+    command:
+      - --url
+      - http://ghidrasql-libghidra:18080
+      - --http
+      - --bind
+      - 0.0.0.0
+      - --port
+      - "8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  ghidrasql-import:
+    image: ghidrasql-ai:latest
+    profiles: ["import"]
+    environment:
+      MODE: headless
+    volumes:
+      - ./projects:/projects
+      - ./samples:/samples:ro
+    command:
+      - /projects
+      - ${GHIDRA_PROJECT_NAME:-hello_demo}
+      - -import
+      - /samples/${GHIDRA_IMPORT_FILE:-hello}
+      - -overwrite
+      - -analysisTimeoutPerFile
+      - "${GHIDRA_ANALYSIS_TIMEOUT:-300}"

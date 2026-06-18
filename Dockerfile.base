@@ -1,0 +1,58 @@
+###############################################################
+# Dockerfile.base
+# Builds ghidrasql-ai-base from Ghidra 12.0.4 PUBLIC (validated in ghidra-ai dev).
+# Override: --build-arg GHIDRA_VERSION=12.1.2 --build-arg GHIDRA_RELEASE=20260605 ...
+###############################################################
+FROM alpine:3.20 AS base
+
+LABEL org.opencontainers.image.title="ghidrasql-ai-base" \
+    org.opencontainers.image.description="Ghidra 12.0.4 base image for ghidrasql-ai" \
+    org.opencontainers.image.source="https://github.com/NationalSecurityAgency/ghidra" \
+    org.opencontainers.image.licenses="Apache 2.0"
+
+RUN addgroup -g 1001 -S ghidra && adduser -u 1001 -S ghidra -G ghidra
+
+ENTRYPOINT ["/bin/bash", "/ghidra/docker/entrypoint.sh"]
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+ENV LD_LIBRARY_PATH=/usr/lib/jvm/java-21-openjdk/lib/:/usr/lib/jvm/java-21-openjdk/lib/server/
+WORKDIR /ghidra
+
+RUN apk update \
+    && apk add --no-cache openjdk21 python3 py3-pip \
+        bash gcompat \
+        fontconfig msttcorefonts-installer \
+        linux-headers libressl-dev \
+    && update-ms-fonts \
+    && pip install --break-system-packages --upgrade pip
+
+FROM base AS build
+
+RUN apk add --no-cache gradle python3-dev alpine-sdk build-base \
+        gcc g++ make libc-dev zlib-dev musl-dev zip readline-dev \
+        curl unzip
+
+ARG GHIDRA_VERSION=12.0.4
+ARG GHIDRA_RELEASE=20260303
+ARG GHIDRA_SHA256=c3b458661d69e26e203d739c0c82d143cc8a4a29d9e571f099c2cf4bda62a120
+
+RUN curl -fsSL -o /tmp/ghidra.zip \
+        "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_${GHIDRA_RELEASE}.zip" \
+    && echo "${GHIDRA_SHA256}  /tmp/ghidra.zip" | sha256sum -c - \
+    && unzip -q /tmp/ghidra.zip -d /tmp \
+    && mv /tmp/ghidra_${GHIDRA_VERSION}_PUBLIC/* /ghidra/ \
+    && rm -rf /tmp/ghidra.zip /tmp/ghidra_${GHIDRA_VERSION}_PUBLIC
+
+RUN /ghidra/Ghidra/Features/BSim/support/make-postgres.sh \
+    && python3 -m venv /ghidra/venv \
+    && /ghidra/venv/bin/python3 -m pip install --no-index \
+        -f /ghidra/Ghidra/Features/PyGhidra/pypkg/dist pyghidra \
+    && mkdir -p /ghidra/repositories /ghidra/bsim_datadir
+
+FROM base AS runtime
+
+RUN apk add --no-cache openssl openssh-client \
+        xhost musl-locales musl-locales-lang curl
+
+USER ghidra
+WORKDIR /ghidra
+COPY --chown=ghidra:ghidra --from=build /ghidra /ghidra
