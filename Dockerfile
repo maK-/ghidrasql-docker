@@ -17,7 +17,7 @@ RUN apk add --no-cache \
 
 ARG LIBGHIDRA_REF=main
 ARG GHIDRASQL_REF=main
-ARG LIBXSQL_REF=ea11622eeec5ac7e5988364ebfaffefccb1bb3f4
+ARG LIBXSQL_REF=v1.0.10
 ARG GHIDRASQL_SKILLS_REF=main
 
 RUN mkdir -p /opt/src /opt/ghidrasql/scripts
